@@ -1,5 +1,7 @@
 package core;
 
+import core.utils.PlayerPiece;
+
 public interface IPiecesInfo {
-    public Piece getValue(int pieceId) throws ArrayIndexOutOfBoundsException;
+    PlayerPiece getPiece(int pieceId) throws ArrayIndexOutOfBoundsException;
 }

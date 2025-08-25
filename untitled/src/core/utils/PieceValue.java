@@ -1,6 +1,13 @@
-package core;
+package core.utils;
 
-public enum Piece {
+import org.jetbrains.annotations.NotNull;
+
+/**
+ * A small enumeration of valid piece values in Stratego,
+ * with supported interactions and basic string representations.
+ */
+
+public enum PieceValue {
     FLAG (-1, "▷"),
     BOMB (20, "⨂"),
     SPY (1, "1"),
@@ -17,32 +24,36 @@ public enum Piece {
     private final int powerValue;
     private final String strFormat;
 
-    Piece(int powerValue, String strFormat) {
+    PieceValue(int powerValue, @NotNull String strFormat) {
         this.powerValue = powerValue;
         this.strFormat = strFormat;
     }
 
-    public String toString() { return strFormat; }
+    public @NotNull String toString() { return strFormat; }
 
-
-    public PieceInteractionResult attacks(
-            Piece defender) {
+    /**
+     * Returns the result of an encounter between this piece and another one.
+     * @param defender the attacked piece
+     * @return the outcome of the battle for this piece
+     */
+    public @NotNull PieceInteractionResult attacks(
+            @NotNull PieceValue defender) {
 
         // Special interactions
         // 1) Anyone can capture the flag
-        if (defender == Piece.FLAG)
+        if (defender == PieceValue.FLAG)
             return PieceInteractionResult.WINS;
         // 2) Spy beats the marshall
-        else if (this == Piece.SPY
-                && defender == Piece.P10)
+        else if (this == PieceValue.SPY
+                && defender == PieceValue.P10)
             return PieceInteractionResult.WINS;
         // 3) Miner beats the bomb
-        else if (this == Piece.MINER
-                && defender == Piece.BOMB)
+        else if (this == PieceValue.MINER
+                && defender == PieceValue.BOMB)
             return PieceInteractionResult.WINS;
 
         // 4) Any other attacker dies to a bomb
-        else if (defender == Piece.BOMB)
+        else if (defender == PieceValue.BOMB)
             return PieceInteractionResult.LOSES;
 
         // Classic interactions : see who's the strongest
@@ -50,6 +61,6 @@ public enum Piece {
             return PieceInteractionResult.WINS;
         else if (this.powerValue == defender.powerValue)
             return PieceInteractionResult.DRAWS;
-        else { return PieceInteractionResult.LOSES; }
+        else return PieceInteractionResult.LOSES;
     }
 }

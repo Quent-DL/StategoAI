@@ -1,4 +1,8 @@
-package core;
+package core.utils;
+
+/**
+ * A small class for describing coordinates within the game board.
+ */
 
 public class Coords {
     public final int x;

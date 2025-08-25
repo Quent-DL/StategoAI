@@ -1,4 +1,4 @@
-package core;
+package core.utils;
 
 public enum PieceInteractionResult {
     WINS,

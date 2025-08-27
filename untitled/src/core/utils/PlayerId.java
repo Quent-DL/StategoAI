@@ -5,5 +5,5 @@ package core.utils;
  */
 
 public enum PlayerId {
-    PLAYER1, PLAYER2;
+    RED, BLUE
 }

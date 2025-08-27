@@ -1,39 +1,46 @@
 package core;
 
-import core.utils.Coords;
-import core.utils.PlayerId;
+import core.exceptions.InvalidBoardStateException;
+import core.exceptions.InvalidCoordinates;
+import core.utils.*;
 import org.jetbrains.annotations.NotNull;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
-import java.util.Arrays;
-import java.util.Observer;
+import java.util.*;
 
 /**
  * Representation of the state of a Stratego board from a global point of view,
  * where all or only some of the information on the board can be accessed.
  * where all the information on the board can be accessed.
- *
+ * <p>
  * Each tile of the board is occupied by nothing ({@code EMPTY_TILE}),
- * a lake ({@code LAKE_TILE}), or a piece (known or unknown).
- *
+ * a lake ({@code LAKE_TILE}), or a piece (known).
+ * <p>
  * This class is meant to be accessed by an engine to run a Stratego game,
  * NOT by the players themselves.
  */
 
 
-public class BoardGlobal implements IBoardState {
-    /** The content of the board, as a form of {@code LAKE_TILE}, {@code EMPTY_TILE},
-     * or piece id's. */
+public final class BoardGlobal implements IBoardState {
+    /** The content of the board */
     private final int[][] board;
 
-    /** An object that maps a piece's id to its value */
-    private @NotNull final IPiecesInfo pieces;
+    /** The information about all pieces within the game */
+    private final @NotNull PlayerPiece[] pieces;
 
     /** An object that listens to the game events
      * (listener design pattern) such as moves, reveals, end of game, ... */
     private final Observer gameEventObserver;
 
-    private @NotNull PlayerId nowPlaying = PlayerId.PLAYER1;
+    private @NotNull PlayerId nowPlaying = PlayerId.RED;
+
+    /** The unit directions in which pieces can move */
+    private final Coords[] directions = new Coords[]{
+            new Coords(1, 0),
+            new Coords(-1, 0),
+            new Coords(0, 1),
+            new Coords(0, -1)
+    };
 
     /**
      * Creates a new board.
@@ -44,7 +51,7 @@ public class BoardGlobal implements IBoardState {
      */
     public BoardGlobal(
             int[][] initBoard,
-            @NotNull IPiecesInfo pieces,
+            @NotNull PlayerPiece[] pieces,
             Observer gameEventObserver) {
         // TODO: check that initBoard contains exactly one flag per team
         this.board = initBoard;
@@ -62,57 +69,141 @@ public class BoardGlobal implements IBoardState {
      */
     public BoardGlobal(
             int[][] initBoard,
-            @NotNull IPiecesInfo pieces,
+            @NotNull PlayerPiece[] pieces,
             Observer gameEventObserver,
             @NotNull PlayerId nowPlaying) {
-        // TODO: check that initBoard contains exactly one flag per team
         this(initBoard, pieces, gameEventObserver);
         this.nowPlaying = nowPlaying;
     }
 
+    /**
+     * @return a copy of the board's current state,
+     * as a matrix of identifier id's for
+     * {@code EMPTY_SQUARE}, {@code LAKE_SQUARE}, {@code ENEMY_PIECE},
+     * or the identifier of an ally piece on the board.
+     *
+     */
     @Override
     public int[][] getBoard() { return copyBoard(); }
+
+    @Override
+    public int getSquare(Coords c) throws InvalidCoordinates {
+        if (isValid(c)) return board[c.y][c.x];
+        else throw new InvalidCoordinates(c);
+    }
+
+    /**
+     * Assigns the specified value to a square of the board
+     * @param c the coordinates of the square
+     * @param value the new value to assign to that square
+     */
+    private void setSquare(Coords c, int value)
+             throws InvalidCoordinates {
+        if (isValid(c)) board[c.y][c.x] = value;
+        else throw new InvalidCoordinates(c);
+    }
+
+    @Override
+    public @NotNull PlayerPiece getPiece(int pieceId)
+            throws IllegalArgumentException {
+        try { return pieces[pieceId]; }
+        catch (ArrayIndexOutOfBoundsException e) {
+            throw new IllegalArgumentException(String.format("Invalid piece id: %d", pieceId));
+        }
+    }
 
     @Override
     public @NotNull PlayerId nowPlaying() { return nowPlaying; }
 
     @Override
-    public boolean canMove(@NotNull Coords from, @NotNull Coords to) {
-        // TODO
-        throw new NotImplementedException();
-        // 1) "from" and "to" must exist on the board
+    public @NotNull List<Action> getActions(@NotNull Coords from)
+            throws InvalidCoordinates, InvalidBoardStateException {
+        if (!isValid(from)) throw new InvalidCoordinates(from);
 
-        // "from" and "to" must be aligned on a grid
+        int fromSquareId = getSquare(from);
 
-        // 2) "from" must point to a piece
+        // Non-pieces cannot move
+        if (fromSquareId == EMPTY_SQUARE
+                || fromSquareId == LAKE_SQUARE)
+            return Collections.emptyList();
 
-        // 3) "from" piece must belong to the player whose turn it is
+        PlayerPiece pieceFrom = getPiece(fromSquareId);
 
-        // 4) "to" piece must NOT belong to the player whose turn it is
+        // Checking if it's the player's turn
+        if (pieceFrom.ownerId != nowPlaying())
+            return Collections.emptyList();
 
-        // 5) "to" must be in range of "from" piece (/!\ special rules for flag, bomb, 2)
+        // Checking all directions until unreachable square encountered
+        ArrayList<Action> legalActions = new ArrayList<>();
+        for (Coords dir: directions) {
+            // Target coordinates of a move, incremented gradually
+            Coords to = from;
+            for (int i = 0; i < pieceFrom.value.maxRange(); i++) {
+                // Target coordinates of a move
+                to = to.add(dir);
+
+                // Target coordinates must be on the board
+                if (!isValid(to)) break;
+
+                // Whether piece can move to/further than this square {@code to}
+                // depends on this square's content
+                int toSquareId = getSquare(to);
+                if (toSquareId == EMPTY_SQUARE) {
+                    // Piece can move to/beyond empty square
+                    legalActions.add(new Action(from, to));
+                } else if (toSquareId == LAKE_SQUARE) {
+                    // Piece cannot move to/beyond lake
+                    break;
+                } else if (0 <= toSquareId && toSquareId < pieces.length) {
+                    PlayerPiece pieceTo = getPiece(getSquare(to));
+                    // Piece can move to another enemy piece,
+                    // but not to a piece of the same team
+                    if (pieceFrom.ownerId != pieceTo.ownerId)
+                        legalActions.add(new Action(from, to));
+                    // No piece can move beyond another piece
+                    break;
+                } else if (toSquareId == ENEMY_PIECE) {
+                    // Should not happen since this class
+                    // takes an omniscient point of view,
+                    // with all information accessible
+                    throw new InvalidBoardStateException(
+                            "BUG - The global board must have access to all pieces");
+                } else {
+                    throw new InvalidBoardStateException(
+                            String.format("BUG - Invalid square id encountered: %d", toSquareId));
+                }
+            }
+        }
+
+        return legalActions;
     }
 
     @Override
-    public @NotNull IBoardState move(@NotNull Coords from, @NotNull Coords to, boolean copy)
+    public boolean isLegal(@NotNull Action move) {
+        return getActions(move.from).contains(move);
+    }
+
+    @Override
+    public @NotNull IBoardState applyAction(@NotNull Action move, boolean copy)
             throws IllegalArgumentException {
-        if (!canMove(from, to))
+        if (!isLegal(move))
             throw new IllegalArgumentException("Attempt to apply illegal move to current state !");
-        BoardGlobal modified = copy ?
+        BoardGlobal modified = (copy) ?
                 new BoardGlobal(copyBoard(), pieces,
                         gameEventObserver, nowPlaying) :
                 this;
 
         // TODO:  handle classic moves or battles + results (notify ?)
-        if (isPiece(to)) {
+        if (isPiece(move.to)) {
             // There is a battle: determines who wins
-            // TODO
+            // TODO - apply to "modified" the correct instructions
             throw new NotImplementedException();
 
         } else {
-            // No battle
-            // TODO
-            throw new NotImplementedException();
+            // No battle, just move the piece
+            int displacedPieceId = modified.getSquare(move.from);
+            modified.setSquare(move.from, EMPTY_SQUARE);
+            modified.setSquare(move.to, displacedPieceId);
         }
 
         return modified;
@@ -139,6 +230,14 @@ public class BoardGlobal implements IBoardState {
         return result;
     }
 
+    @Override
+    public boolean isValid(@NotNull Coords c) {
+        return (c.y <= 0
+                && c.y < board.length
+                && c.x >= 0
+                && c.x < board[0].length);
+    }
+
     /**
      * @param c some coordinates within the board
      * @return whether these coordinates are within the board
@@ -146,17 +245,12 @@ public class BoardGlobal implements IBoardState {
      */
     private boolean isPiece(Coords c) {
         // Checks if coordinates are within the board
-        if (
-                c.y < 0
-                || c.y >= board.length
-                || c.x < 0
-                || c.x >= board[0].length
-        ) { return false; }
+        if (!isValid(c)) return false;
 
         // Checks if coordinates point to a piece
         return (
-                board[c.y][c.x] != EMPTY_TILE
-                && board[c.y][c.x] != LAKE_TILE
+                board[c.y][c.x] != EMPTY_SQUARE
+                && board[c.y][c.x] != LAKE_SQUARE
                 );
     }
 }

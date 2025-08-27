@@ -37,4 +37,5 @@ public class PlayerPiece {
             throw new IllegalArgumentException(
                     "A piece cannot attack another piece from the same team.");
     }
+
 }
